@@ -5,13 +5,13 @@ import "strconv"
 type EventWAL []Event
 
 func (wal *EventWAL) Add(e Event) {
-	e.SetID([]byte(wal.currentIdx()))
+	e.(*event).id = wal.currentIdx()
 	*wal = append(*wal, e)
 }
 
 func (wal *EventWAL) Reply(c Connection) {
 	for idx := range *wal {
-		id, _ := strconv.Atoi(string((*wal)[idx].ID()))
+		id, _ := strconv.Atoi((*wal)[idx].ID())
 		if id >= c.EventID() {
 			c.Send((*wal)[idx])
 		}

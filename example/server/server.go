@@ -27,7 +27,7 @@ func generateMessage(broker gosse.Broker) {
 		case <-ticker.C:
 			idxStr := strconv.Itoa(idx)
 
-			if err := broker.Publish("test", gosse.NewEvent([]byte(idxStr), []byte("test"), []byte("test"), []byte("1"))); err != nil {
+			if err := broker.Publish("test", gosse.NewEvent(idxStr, "test", "test")); err != nil {
 				panic(err)
 			}
 			idx++

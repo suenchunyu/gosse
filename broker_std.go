@@ -1,7 +1,6 @@
 package gosse
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 )
@@ -13,7 +12,7 @@ const (
 func (b *broker) StdHTTPHandler(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "Event Source unsupported", http.StatusInternalServerError)
+		http.Error(w, "Topic unsupported", http.StatusInternalServerError)
 		return
 	}
 
@@ -21,18 +20,18 @@ func (b *broker) StdHTTPHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	eventSourceID := r.URL.Query().Get("source")
+	eventSourceID := r.URL.Query().Get("topic")
 	if eventSourceID == "" {
-		http.Error(w, "Please specify a event source", http.StatusBadRequest)
+		http.Error(w, "Please specify a topic", http.StatusBadRequest)
 		return
 	}
 
-	source, err := b.GetEventSource(eventSourceID)
+	topic, err := b.GetTopic(eventSourceID)
 	if err != nil {
-		if err == ErrEventSourceNotExist && b.AutoCreation() {
-			source = b.CreateEventSource(eventSourceID)
-		} else if err == ErrEventSourceNotExist && !b.AutoCreation() {
-			http.Error(w, "Event Source not found", http.StatusNotFound)
+		if err == ErrTopicNotExist && b.AutoCreation() {
+			topic = b.CreateTopic(eventSourceID)
+		} else if err == ErrTopicNotExist && !b.AutoCreation() {
+			http.Error(w, "Topic not found", http.StatusNotFound)
 			return
 		} else {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -50,13 +49,14 @@ func (b *broker) StdHTTPHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	conn := source.addConnection(eventID)
+	conn := topic.addConnection(eventID)
 
 	go func() {
 		<-r.Context().Done()
 		conn.Close()
 	}()
 
+	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
 	for event := range conn.Queue() {
@@ -64,11 +64,7 @@ func (b *broker) StdHTTPHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		_, _ = fmt.Fprintf(w, "id: %s\n", event.ID())
-		_, _ = fmt.Fprintf(w, "data: %s\n", event.Data())
-		_, _ = fmt.Fprintf(w, "event: %s\n", event.Event())
-		_, _ = fmt.Fprintf(w, "retry: %s\n", event.Retry())
-		_, _ = fmt.Fprint(w, "\n")
+		_, _ = w.Write(event.Bytes())
 
 		flusher.Flush()
 	}

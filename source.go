@@ -1,8 +1,6 @@
 package gosse
 
-type EventSourceState uint8
-
-type EventSource struct {
+type Topic struct {
 	id     string
 	replay bool
 
@@ -15,8 +13,8 @@ type EventSource struct {
 	deregister chan Connection
 }
 
-func newEventSource(id string, bufferSize int, playable bool) *EventSource {
-	return &EventSource{
+func newTopic(id string, bufferSize int, playable bool) *Topic {
+	return &Topic{
 		id:         id,
 		replay:     playable,
 		conn:       make([]Connection, 0),
@@ -28,7 +26,7 @@ func newEventSource(id string, bufferSize int, playable bool) *EventSource {
 	}
 }
 
-func (src *EventSource) addConnection(eventID int) Connection {
+func (src *Topic) addConnection(eventID int) Connection {
 	conn := &conn{
 		eventID: eventID,
 		quit:    make(chan struct{}),
@@ -39,7 +37,7 @@ func (src *EventSource) addConnection(eventID int) Connection {
 	return conn
 }
 
-func (src *EventSource) getConnectionIndex(conn Connection) int {
+func (src *Topic) getConnectionIndex(conn Connection) int {
 	for idx, connection := range src.conn {
 		if connection == conn {
 			return idx
@@ -48,23 +46,23 @@ func (src *EventSource) getConnectionIndex(conn Connection) int {
 	return -1
 }
 
-func (src *EventSource) removeConnection(idx int) {
+func (src *Topic) removeConnection(idx int) {
 	src.conn[idx].Close()
 	src.conn = append(src.conn[:idx], src.conn[idx+1:]...)
 }
 
-func (src *EventSource) removeAllConnections() {
+func (src *Topic) removeAllConnections() {
 	for _, connection := range src.conn {
 		connection.Close()
 	}
 	src.conn = src.conn[:0]
 }
 
-func (src *EventSource) close() {
+func (src *Topic) close() {
 	src.quitC <- struct{}{}
 }
 
-func (src *EventSource) background() {
+func (src *Topic) background() {
 BackgroundLoop:
 	for {
 		select {

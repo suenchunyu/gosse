@@ -7,22 +7,33 @@ import (
 )
 
 var (
-	ErrEventSourceNotExist = errors.New("specified event source not exist")
+	ErrTopicNotExist = errors.New("specified topic not exist")
 )
 
+// Broker represents a proxy that the server applies
+// to the Topic, providing programming interfaces
+// such as creating Topic, publishing events.
 type Broker interface {
+	// Publish an event to the Topic with specified id
 	Publish(id string, event Event) error
 
-	CreateEventSource(id string) *EventSource
+	// CreateTopic with specified id
+	CreateTopic(id string) *Topic
 
-	DeleteEventSource(id string) error
+	// DeleteTopic with specified id and release all connections
+	DeleteTopic(id string) error
 
-	GetEventSource(id string) (*EventSource, error)
+	// GetTopic with specified id
+	GetTopic(id string) (*Topic, error)
 
+	// StdHTTPHandler is the default handler based on net/http
 	StdHTTPHandler(w http.ResponseWriter, r *http.Request)
 
+	// AutoCreation returns true if creation of non-existent Topic
+	// automatically
 	AutoCreation() bool
 
+	// Close broker and release all Topic and Connection.
 	Close() error
 }
 
@@ -33,18 +44,21 @@ type broker struct {
 	playable     bool
 	autoCreation bool
 
-	sources map[string]*EventSource
+	topics map[string]*Topic
 }
 
 var _ Broker = new(broker)
 
+// NewBroker with specified bufferSize, could be set playable is true when
+// you need replay event for newest connection, set autoCreation is true when
+// creation of non-existent Topic automatically
 func NewBroker(bufferSize int, playable bool, autoCreation bool) Broker {
 	return &broker{
 		mu:           new(sync.Mutex),
 		bufferSize:   bufferSize,
 		playable:     playable,
 		autoCreation: autoCreation,
-		sources:      make(map[string]*EventSource),
+		topics:       make(map[string]*Topic),
 	}
 }
 
@@ -52,53 +66,53 @@ func (b *broker) Publish(id string, event Event) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if source, exist := b.sources[id]; exist {
+	if source, exist := b.topics[id]; exist {
 		source.events <- event
 	} else {
-		return ErrEventSourceNotExist
+		return ErrTopicNotExist
 	}
 
 	return nil
 }
 
-func (b *broker) CreateEventSource(id string) *EventSource {
+func (b *broker) CreateTopic(id string) *Topic {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if source, exist := b.sources[id]; exist {
+	if source, exist := b.topics[id]; exist {
 		return source
 	}
 
-	src := newEventSource(id, b.bufferSize, b.playable)
+	src := newTopic(id, b.bufferSize, b.playable)
 	go src.background()
 
-	b.sources[id] = src
+	b.topics[id] = src
 
 	return src
 }
 
-func (b *broker) DeleteEventSource(id string) error {
+func (b *broker) DeleteTopic(id string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if source, exist := b.sources[id]; exist {
+	if source, exist := b.topics[id]; exist {
 		source.close()
-		delete(b.sources, id)
+		delete(b.topics, id)
 	} else {
-		return ErrEventSourceNotExist
+		return ErrTopicNotExist
 	}
 
 	return nil
 }
 
-func (b *broker) GetEventSource(id string) (*EventSource, error) {
+func (b *broker) GetTopic(id string) (*Topic, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if source, exist := b.sources[id]; exist {
+	if source, exist := b.topics[id]; exist {
 		return source, nil
 	} else {
-		return nil, ErrEventSourceNotExist
+		return nil, ErrTopicNotExist
 	}
 }
 
@@ -110,9 +124,9 @@ func (b *broker) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	for id, source := range b.sources {
+	for id, source := range b.topics {
 		source.close()
-		delete(b.sources, id)
+		delete(b.topics, id)
 	}
 
 	return nil
